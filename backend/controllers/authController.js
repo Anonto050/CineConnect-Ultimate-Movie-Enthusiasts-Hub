@@ -54,11 +54,12 @@ const authController = {
     login: async (req, res) => {
         try {
             const { username, password } = req.body;
-            // console.log('login: ', req.body);
-            // console.log('username', username);
+            // console.log('login req.body', req.body);
+            console.log('username', username);
             // console.log('password', password);
 
             const user = await userModel.findOne({ username });
+            // console.log('user', user);
 
             if (!user) {
                 console.error('user not found');
@@ -67,14 +68,13 @@ const authController = {
                     .json({ errors: 'Username or password is incorrect' });
             }
 
-            // console.log('user', user);
-
             // console.log('hashedPassword', hashedPassword);
             // console.log('user.password', user.password);
             const isPasswordCorrect = await bcrypt.compare(
                 password,
                 user.password
             );
+            console.log('isPasswordCorrect', isPasswordCorrect);
 
             if (!isPasswordCorrect) {
                 console.log('password incorrect');
@@ -86,12 +86,15 @@ const authController = {
             const token = jwt.sign({ id: user.id }, SECRET_KEY, {
                 expiresIn: '1d',
             });
+            // console.log('token', token);
+
+            const isProduction = process.env.NODE_ENV === 'production';
 
             // Set token in an HTTP-only cookie
             res.cookie('token', token, {
-                httpOnly: true,
-                secure: false, // no Send only over HTTPS
-                // sameSite: 'Lax', // no Strict SameSite policy
+                httpOnly: true, // This makes the cookie inaccessible to client-side scripts, enhancing security
+                secure: isProduction, // true in production, false in development
+                sameSite: isProduction ? 'None' : 'Lax', // None for production, Lax for development
                 maxAge: 3600000 * 24, // Cookie expiry set to match token expiry // 1d
                 path: '/', // Set the path to root
             });
@@ -108,10 +111,12 @@ const authController = {
 
     isLoggedIn: async (req, res) => {
         try {
+            console.log('req.user', req.user);
             if (!req.user) {
                 return res.status(200).json({ loggedIn: false });
             }
             const userInfo = await userModel.fetchUserById({ id: req.user.id });
+            // console.log('userInfo', userInfo);
 
             if (!userInfo) {
                 return res.status(200).json({ loggedIn: false });
@@ -134,21 +139,24 @@ const authController = {
     matchPassword: async (req, res) => {
         const { username } = req.params;
         const { password } = req.body; // Getting password from the request body
-    
+
         try {
-            const { hashedPassword, error } = await userModel.getHashedPasswordByUsername(username);
-    
+            const { hashedPassword, error } =
+                await userModel.getHashedPasswordByUsername(username);
+
             if (error) {
-                return res.status(500).json({ message: 'Internal server error' });
+                return res
+                    .status(500)
+                    .json({ message: 'Internal server error' });
             }
-    
+
             if (!hashedPassword) {
                 return res.status(404).json({ message: 'User not found' });
             }
-    
+
             // Compare provided password with hashed password
             const isMatch = await bcrypt.compare(password, hashedPassword);
-    
+
             if (isMatch) {
                 res.json({ message: 'Password matches' });
             } else {
@@ -164,9 +172,10 @@ const authController = {
         try {
             res.cookie('token', '', {
                 httpOnly: true, // This makes the cookie inaccessible to client-side scripts, enhancing security
-                secure: false, // Ensures the cookie is sent over HTTPS --> no
+                secure: process.env.NODE_ENV === 'production', // Ensures the cookie is sent over HTTPS in production
                 expires: new Date(0), // Setting the cookie's expiry date to Unix Epoch (January 1, 1970) ensures it's in the past
-                // sameSite: 'strict' // This setting controls whether the cookie is sent in cross-site requests
+                sameSite:
+                    process.env.NODE_ENV === 'production' ? 'None' : 'Lax', // None for cross-site, Lax for same-site requests
                 path: '/', // Set the path to root
             });
             return res.status(200).json({ success: true });
@@ -175,7 +184,6 @@ const authController = {
             return res.status(500).json({ errors: err });
         }
     },
-    
 };
 
 module.exports = authController;
